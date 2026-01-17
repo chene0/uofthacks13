@@ -83,7 +83,6 @@ function ensureSocket() {
 
   socket.on("force_swap", async (payload) => {
     const url = typeof payload === "string" ? payload : payload?.url;
-    const partnerId = payload?.partnerId;
 
     if (!isValidPlayableUrl(url)) {
       console.log("[force_swap] ignored banned/invalid url:", url);
@@ -93,19 +92,7 @@ function ensureSocket() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
 
-    chrome.tabs.update(tab.id, { url }, () => {
-      // Troll feature: alert after navigation request.
-      const message = `⚠️ TAB SWAPPED! You are now viewing ${partnerId || "another user's"} tab.`;
-
-      // Small delay helps ensure the page is in a state where alert() works.
-      setTimeout(() => {
-        chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (msg) => alert(msg),
-          args: [message],
-        });
-      }, 250);
-    });
+    chrome.tabs.update(tab.id, { url });
   });
 
   return socket;
