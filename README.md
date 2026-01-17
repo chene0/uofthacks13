@@ -26,9 +26,13 @@ Server runs at `http://localhost:3000`.
 1. Put your Socket.io client bundle here:
    - `extension/lib/socket.io-client.min.js`
    - It must define global `io` (the service worker loads it via `importScripts()`).
-2. In Chrome, open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** → select the `extension/` folder.
+2. (Optional) Edit `extension/config.js` to point to your deployed server:
+   ```js
+   SERVER_URL: "https://your-app.onrender.com",
+   ```
+3. In Chrome, open `chrome://extensions`.
+4. Enable **Developer mode**.
+5. Click **Load unpacked** → select the `extension/` folder.
 
 ## Use it (demo checklist)
 1. Start the backend (above).

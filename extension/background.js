@@ -9,8 +9,11 @@
 
 // eslint-disable-next-line no-undef
 importScripts(chrome.runtime.getURL("lib/socket.io-client.min.js"));
+// eslint-disable-next-line no-undef
+importScripts(chrome.runtime.getURL("config.js"));
 
-const SERVER_URL = "http://localhost:3000";
+// eslint-disable-next-line no-undef
+const SERVER_URL = CONFIG.SERVER_URL;
 
 const BANNED_SUBSTRINGS = [
   "chrome://",
