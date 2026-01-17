@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Uofthacks13 Tab Swap (MVP)",
+  "version": "0.0.1",
+  "description": "Pairs active users every 15s and swaps their current tabs (MVP).",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "tabs", "scripting", "storage"],
+  "host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
+
