@@ -255,7 +255,7 @@ if (window.__caught4kInjected) {
         }
       </style>
       <div style="color: #e94560; font-size: 34px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;">
-        🚨 CAUGHT 4K 🚨
+        🚨 CAUGHT IN 4K 🚨
       </div>
       <div style="margin-bottom: 20px;">
         ${photo ? `<img src="${photo}" style="width: 240px; height: 180px; object-fit: cover; border-radius: 8px; border: 2px solid #e94560;">` : ''}

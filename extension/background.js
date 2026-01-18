@@ -50,7 +50,7 @@ const BANNED_SUBSTRINGS = [
 // ============================================================================
 let socket = null;
 let connected = false;
-let currentUserIdentity = { email: "Anonymous Slacker" };
+let currentUserIdentity = { email: "Anonymous Slacker", name: "Anonymous Slacker" };
 let chargeLevel = 0;
 let lastWarningLevel = 0; // Track which warning we last sent (50, 75, 90)
 let currentSlackingUrl = null; // The URL user was on when caught
@@ -97,17 +97,195 @@ function extractDomain(url) {
 // ============================================================================
 async function fetchUserIdentity() {
   try {
-    const userInfo = await chrome.identity.getProfileUserInfo({ accountStatus: "ANY" });
-    if (userInfo?.email) {
-      currentUserIdentity = { email: userInfo.email };
-      console.log("[identity] User:", currentUserIdentity.email);
+    // #region agent log
+    console.log("[identity] DEBUG: Starting identity fetch");
+    // #endregion
+
+    // Try getProfileUserInfo first (may not work in MV3 service workers)
+    let email = null;
+    try {
+      const userInfo = await chrome.identity.getProfileUserInfo({ accountStatus: "ANY" });
+      // #region agent log
+      console.log("[identity] DEBUG: getProfileUserInfo result =", JSON.stringify(userInfo));
+      // #endregion
+      email = userInfo?.email;
+    } catch (err) {
+      // #region agent log
+      console.log("[identity] DEBUG: getProfileUserInfo failed:", err.message);
+      // #endregion
+    }
+
+    // If getProfileUserInfo didn't work, try OAuth approach
+    if (!email) {
+      // #region agent log
+      console.log("[identity] DEBUG: Trying OAuth token approach");
+      // #endregion
+      try {
+        // Try interactive first (will prompt user if needed)
+        const token = await chrome.identity.getAuthToken({
+          interactive: true,
+          scopes: ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
+        });
+
+        if (token) {
+          // #region agent log
+          console.log("[identity] DEBUG: Got OAuth token, fetching userinfo");
+          // #endregion
+          const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            // #region agent log
+            console.log("[identity] DEBUG: userinfo API response =", JSON.stringify(userData));
+            // #endregion
+            email = userData?.email;
+            // If we got name from userinfo, use it
+            if (userData?.name) {
+              currentUserIdentity = { email: email || "Anonymous Slacker", name: userData.name };
+              console.log("[identity] User:", userData.name, `(${email})`);
+              return;
+            }
+          } else {
+            // #region agent log
+            console.log("[identity] DEBUG: userinfo API failed:", response.status);
+            // #endregion
+          }
+        }
+      } catch (oauthErr) {
+        // #region agent log
+        console.log("[identity] DEBUG: OAuth approach failed:", oauthErr.message);
+        // #endregion
+      }
+    }
+
+    if (!email) {
+      // Fallback: Generate or retrieve a persistent unique identifier
+      // #region agent log
+      console.log("[identity] DEBUG: No email found, generating persistent ID");
+      // #endregion
+
+      let persistentId = await chrome.storage.local.get("persistentUserId");
+      if (!persistentId.persistentUserId) {
+        // Generate a random but memorable identifier
+        const adjectives = ["Sneaky", "Crafty", "Sly", "Clever", "Wily", "Shady", "Tricky"];
+        const nouns = ["Fox", "Raven", "Shadow", "Ghost", "Phantom", "Viper", "Cobra"];
+        const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+        const randomNum = Math.floor(Math.random() * 1000);
+        persistentId.persistentUserId = `${randomAdj} ${randomNoun} ${randomNum}`;
+        await chrome.storage.local.set({ persistentUserId: persistentId.persistentUserId });
+      }
+
+      currentUserIdentity = {
+        email: "Anonymous Slacker",
+        name: persistentId.persistentUserId
+      };
+      console.log("[identity] Using generated ID:", persistentId.persistentUserId);
+      // #region agent log
+      console.log("[identity] DEBUG: Generated persistent ID =", persistentId.persistentUserId);
+      // #endregion
+      return;
+    }
+
+    // Try to get full name from Google People API
+    let fullName = null;
+    try {
+      // #region agent log
+      console.log("[identity] DEBUG: Attempting to get auth token");
+      // #endregion
+
+      const token = await chrome.identity.getAuthToken({
+        interactive: false,
+        scopes: ["https://www.googleapis.com/auth/userinfo.profile"],
+      });
+
+      // #region agent log
+      console.log("[identity] DEBUG: Token received =", token ? "YES" : "NO", token?.substring(0, 20) + "...");
+      // #endregion
+
+      if (token) {
+        // Call Google People API to get profile
+        // #region agent log
+        console.log("[identity] DEBUG: Calling People API");
+        // #endregion
+
+        const response = await fetch(
+          "https://people.googleapis.com/v1/people/me?personFields=names",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        // #region agent log
+        console.log("[identity] DEBUG: API response status =", response.status, response.statusText);
+        // #endregion
+
+        if (response.ok) {
+          const data = await response.json();
+          // #region agent log
+          console.log("[identity] DEBUG: API response data =", JSON.stringify(data));
+          // #endregion
+
+          const names = data?.names;
+          if (names && names.length > 0) {
+            const primaryName = names.find((n) => n.metadata?.primary) || names[0];
+            // #region agent log
+            console.log("[identity] DEBUG: primaryName =", JSON.stringify(primaryName));
+            // #endregion
+
+            if (primaryName?.givenName && primaryName?.familyName) {
+              fullName = `${primaryName.givenName} ${primaryName.familyName}`;
+            } else if (primaryName?.displayName) {
+              fullName = primaryName.displayName;
+            }
+            // #region agent log
+            console.log("[identity] DEBUG: fullName extracted =", fullName);
+            // #endregion
+          } else {
+            // #region agent log
+            console.log("[identity] DEBUG: No names array in response");
+            // #endregion
+          }
+        } else {
+          const errorText = await response.text();
+          // #region agent log
+          console.log("[identity] DEBUG: API error response =", errorText);
+          // #endregion
+        }
+      } else {
+        // #region agent log
+        console.log("[identity] DEBUG: No token received");
+        // #endregion
+      }
+    } catch (apiErr) {
+      console.log("[identity] Could not fetch name from Google API:", apiErr);
+      // #region agent log
+      console.log("[identity] DEBUG: API error details =", apiErr.message, apiErr.stack);
+      // #endregion
+      // Continue with email fallback
+    }
+
+    // Use name if available, otherwise use email, otherwise "Anonymous Slacker"
+    if (fullName) {
+      currentUserIdentity = { email: userInfo.email, name: fullName };
+      console.log("[identity] User:", fullName, `(${userInfo.email})`);
     } else {
-      currentUserIdentity = { email: "Anonymous Slacker" };
-      console.log("[identity] No email found, using default");
+      currentUserIdentity = { email: userInfo.email, name: userInfo.email };
+      console.log("[identity] User:", userInfo.email);
+      // #region agent log
+      console.log("[identity] DEBUG: Using email as name, fullName was null");
+      // #endregion
     }
   } catch (err) {
     console.log("[identity] Error fetching identity:", err);
-    currentUserIdentity = { email: "Anonymous Slacker" };
+    // #region agent log
+    console.log("[identity] DEBUG: Outer catch block, error =", err.message, err.stack);
+    // #endregion
+    currentUserIdentity = { email: "Anonymous Slacker", name: "Anonymous Slacker" };
   }
 }
 
@@ -363,7 +541,7 @@ async function triggerPunishment(tabId) {
   try {
     await chrome.tabs.sendMessage(tabId, {
       type: "trigger_punishment",
-      name: currentUserIdentity.email,
+      name: currentUserIdentity.name,
       url: currentSlackingUrl,
     });
     console.log("[punishment] Triggered webcam capture");
@@ -381,7 +559,7 @@ function sendShamePacket(photo) {
   }
 
   const packet = {
-    name: currentUserIdentity.email,
+    name: currentUserIdentity.name,
     url: currentSlackingUrl,
     photo: photo || null,
   };
