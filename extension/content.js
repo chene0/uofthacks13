@@ -232,11 +232,11 @@ if (window.__caught4kInjected) {
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       border: 4px solid #e94560;
       border-radius: 16px;
-      padding: 24px;
+      padding: 30px;
       box-shadow: 0 0 60px rgba(233, 69, 96, 0.5);
       text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 400px;
+      max-width: 480px;
       animation: caught4k-shake 0.5s ease-in-out;
     `;
 
@@ -254,24 +254,24 @@ if (window.__caught4kInjected) {
           75% { transform: translate(-50%, -50%) rotate(2deg); }
         }
       </style>
-      <div style="color: #e94560; font-size: 28px; font-weight: bold; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 2px;">
+      <div style="color: #e94560; font-size: 34px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;">
         🚨 CAUGHT 4K 🚨
       </div>
-      <div style="margin-bottom: 16px;">
-        ${photo ? `<img src="${photo}" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #e94560;">` : ''}
+      <div style="margin-bottom: 20px;">
+        ${photo ? `<img src="${photo}" style="width: 240px; height: 180px; object-fit: cover; border-radius: 8px; border: 2px solid #e94560;">` : ''}
       </div>
-      <div style="color: #fff; font-size: 18px; margin-bottom: 8px;">
+      <div style="color: #fff; font-size: 22px; margin-bottom: 10px;">
         <strong style="color: #e94560;">${escapeHtml(name)}</strong>
       </div>
-      <div style="color: #aaa; font-size: 14px; margin-bottom: 16px;">
+      <div style="color: #aaa; font-size: 17px; margin-bottom: 20px;">
         was slacking on <strong style="color: #0f4c75;">${escapeHtml(domain)}</strong>
       </div>
       <button id="caught4k-close" style="
         background: #e94560;
         color: white;
         border: none;
-        padding: 12px 32px;
-        font-size: 16px;
+        padding: 14px 38px;
+        font-size: 19px;
         font-weight: bold;
         border-radius: 8px;
         cursor: pointer;
