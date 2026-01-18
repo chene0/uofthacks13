@@ -17,5 +17,12 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "oauth2": {
+    "client_id": "971107239006-d7j6pd61rhjofd2fb2pvngt1d6d3eqju.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  }
 }

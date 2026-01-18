@@ -122,17 +122,109 @@ async function fetchUserIdentity() {
       // #endregion
       try {
         // Try interactive first (will prompt user if needed)
-        const token = await chrome.identity.getAuthToken({
-          interactive: true,
-          scopes: ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        });
+        // #region agent log
+        console.log("[identity] DEBUG: Calling getAuthToken with scopes:", ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]);
+        // #endregion
 
-        if (token) {
+        let token;
+        try {
+          token = await chrome.identity.getAuthToken({
+            interactive: true,
+            scopes: ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
+          });
+        } catch (tokenErr) {
           // #region agent log
-          console.log("[identity] DEBUG: Got OAuth token, fetching userinfo");
+          console.log("[identity] DEBUG: getAuthToken threw error:", tokenErr.message, tokenErr);
+          // #endregion
+          throw tokenErr;
+        }
+
+        // #region agent log
+        console.log("[identity] DEBUG: getAuthToken returned:", typeof token, token);
+        if (token) {
+          if (typeof token === "string") {
+            console.log("[identity] DEBUG: Token is string, length =", token.length);
+          } else if (typeof token === "object") {
+            console.log("[identity] DEBUG: Token is object, keys =", Object.keys(token));
+          }
+        }
+        // #endregion
+
+        // Extract token string from object if needed
+        let tokenString = null;
+        if (typeof token === "string") {
+          tokenString = token;
+        } else if (token && typeof token === "object") {
+          // Sometimes getAuthToken returns an object with the token inside
+          tokenString = token.token || token.access_token || token.value || (typeof token.toString === "function" ? token.toString() : null);
+          // #region agent log
+          console.log("[identity] DEBUG: Extracted token string from object:", tokenString ? "YES" : "NO");
+          // #endregion
+        }
+
+        if (tokenString && typeof tokenString === "string") {
+
+          // Try People API first (better for getting full name)
+          try {
+            // #region agent log
+            console.log("[identity] DEBUG: Trying People API");
+            // #endregion
+            const peopleResponse = await fetch(
+              "https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses",
+              {
+                headers: { Authorization: `Bearer ${tokenString}` },
+              }
+            );
+
+            // #region agent log
+            console.log("[identity] DEBUG: People API status =", peopleResponse.status);
+            // #endregion
+
+            if (peopleResponse.ok) {
+              const peopleData = await peopleResponse.json();
+              // #region agent log
+              console.log("[identity] DEBUG: People API response =", JSON.stringify(peopleData));
+              // #endregion
+
+              // Extract email
+              const emailAddresses = peopleData?.emailAddresses;
+              if (emailAddresses && emailAddresses.length > 0) {
+                email = emailAddresses.find((e) => e.metadata?.primary)?.value || emailAddresses[0]?.value;
+              }
+
+              // Extract name
+              const names = peopleData?.names;
+              if (names && names.length > 0) {
+                const primaryName = names.find((n) => n.metadata?.primary) || names[0];
+                if (primaryName?.givenName && primaryName?.familyName) {
+                  const fullName = `${primaryName.givenName} ${primaryName.familyName}`;
+                  currentUserIdentity = { email: email || "Anonymous Slacker", name: fullName };
+                  console.log("[identity] User:", fullName, `(${email})`);
+                  return;
+                } else if (primaryName?.displayName) {
+                  currentUserIdentity = { email: email || "Anonymous Slacker", name: primaryName.displayName };
+                  console.log("[identity] User:", primaryName.displayName, `(${email})`);
+                  return;
+                }
+              }
+            } else {
+              const errorText = await peopleResponse.text();
+              // #region agent log
+              console.log("[identity] DEBUG: People API error =", errorText);
+              // #endregion
+            }
+          } catch (peopleErr) {
+            // #region agent log
+            console.log("[identity] DEBUG: People API exception =", peopleErr.message);
+            // #endregion
+          }
+
+          // Fallback to userinfo API
+          // #region agent log
+          console.log("[identity] DEBUG: Trying userinfo API as fallback");
           // #endregion
           const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${tokenString}` },
           });
 
           if (response.ok) {
@@ -140,7 +232,7 @@ async function fetchUserIdentity() {
             // #region agent log
             console.log("[identity] DEBUG: userinfo API response =", JSON.stringify(userData));
             // #endregion
-            email = userData?.email;
+            email = userData?.email || email;
             // If we got name from userinfo, use it
             if (userData?.name) {
               currentUserIdentity = { email: email || "Anonymous Slacker", name: userData.name };
@@ -148,14 +240,19 @@ async function fetchUserIdentity() {
               return;
             }
           } else {
+            const errorText = await response.text();
             // #region agent log
-            console.log("[identity] DEBUG: userinfo API failed:", response.status);
+            console.log("[identity] DEBUG: userinfo API failed:", response.status, errorText);
             // #endregion
           }
+        } else {
+          // #region agent log
+          console.log("[identity] DEBUG: Token is missing or invalid, cannot proceed with OAuth");
+          // #endregion
         }
       } catch (oauthErr) {
         // #region agent log
-        console.log("[identity] DEBUG: OAuth approach failed:", oauthErr.message);
+        console.log("[identity] DEBUG: OAuth approach failed:", oauthErr.message, oauthErr);
         // #endregion
       }
     }
@@ -201,11 +298,19 @@ async function fetchUserIdentity() {
         scopes: ["https://www.googleapis.com/auth/userinfo.profile"],
       });
 
+      // Extract token string from object if needed
+      let tokenString = null;
+      if (typeof token === "string") {
+        tokenString = token;
+      } else if (token && typeof token === "object") {
+        tokenString = token.token || token.access_token || token.value || (typeof token.toString === "function" ? token.toString() : null);
+      }
+
       // #region agent log
-      console.log("[identity] DEBUG: Token received =", token ? "YES" : "NO", token?.substring(0, 20) + "...");
+      console.log("[identity] DEBUG: Token received =", tokenString ? "YES" : "NO", tokenString ? (tokenString.substring(0, 20) + "...") : "NO TOKEN");
       // #endregion
 
-      if (token) {
+      if (tokenString) {
         // Call Google People API to get profile
         // #region agent log
         console.log("[identity] DEBUG: Calling People API");
@@ -215,7 +320,7 @@ async function fetchUserIdentity() {
           "https://people.googleapis.com/v1/people/me?personFields=names",
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${tokenString}`,
             },
           }
         );
