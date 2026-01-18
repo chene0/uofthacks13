@@ -1,5 +1,7 @@
 # Uofthacks13 — Tab Swap Troll (Chrome Extension + Node Backend)
 
+# DEMO: https://youtu.be/QTjzPNiiu8w
+
 MVP: users connect to a central Socket.io server; every 15 seconds the server randomly pairs active users and swaps their current tab URLs.
 
 ## Repo layout
