@@ -4,8 +4,8 @@
  */
 const CONFIG = {
   // Local development:
-  // SERVER_URL: "http://localhost:3000",
+  SERVER_URL: "http://localhost:3000",
 
   // Deployed (uncomment and edit when deploying):
-  SERVER_URL: "https://uofthacks13.onrender.com",
+  // SERVER_URL: "https://uofthacks13.onrender.com",
 };

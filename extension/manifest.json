@@ -1,15 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Uofthacks13 Tab Swap (MVP)",
-  "version": "0.0.1",
-  "description": "Pairs active users every 15s and swaps their current tabs (MVP).",
+  "name": "Caught 4K - Productivity Shamer",
+  "version": "0.1.0",
+  "description": "Tracks slacking on blacklisted sites and publicly shames you to random victims.",
   "action": {
     "default_popup": "popup.html"
   },
-  "permissions": ["activeTab", "tabs", "scripting", "storage"],
+  "permissions": ["activeTab", "tabs", "scripting", "storage", "identity"],
   "host_permissions": ["*://*/*"],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }
-

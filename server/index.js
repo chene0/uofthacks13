@@ -44,7 +44,7 @@ app.use(cors());
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
-    name: "uofthacks13-server",
+    name: "caught-4k-server",
     connectedUsers: users.size,
   });
 });
@@ -59,9 +59,23 @@ const io = new Server(server, {
 });
 
 /**
- * Map<socketId, { currentUrl: string|null, isReady: boolean, lastSeen: number }>
+ * Map<socketId, { currentUrl: string|null, isReady: boolean, lastSeen: number, isBeingShamed: boolean }>
  */
 const users = new Map();
+
+/**
+ * Find a random victim for shame packet (not the sender, not currently being shamed)
+ */
+function findRandomVictim(excludeSocketId) {
+  const candidates = [];
+  for (const [socketId, state] of users.entries()) {
+    if (socketId === excludeSocketId) continue;
+    if (state.isBeingShamed) continue;
+    candidates.push(socketId);
+  }
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
 
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
@@ -70,6 +84,7 @@ io.on("connection", (socket) => {
     currentUrl: null,
     isReady: true,
     lastSeen: Date.now(),
+    isBeingShamed: false,
   });
 
   socket.on("update_url", (payload) => {
@@ -89,6 +104,39 @@ io.on("connection", (socket) => {
     }
 
     state.currentUrl = trimmed;
+  });
+
+  // Handle shame packets from perpetrators
+  socket.on("shame_packet", (payload) => {
+    const { name, url, photo } = payload || {};
+    console.log(`[shame_packet] from=${socket.id} name=${name} url=${url?.substring(0, 50)}`);
+
+    // Find a random victim
+    const victimId = findRandomVictim(socket.id);
+    if (!victimId) {
+      console.log("[shame_packet] No victim available");
+      return;
+    }
+
+    // Mark victim as being shamed (temporarily)
+    const victimState = users.get(victimId);
+    if (victimState) {
+      victimState.isBeingShamed = true;
+      // Clear shame status after 10 seconds
+      setTimeout(() => {
+        if (users.has(victimId)) {
+          users.get(victimId).isBeingShamed = false;
+        }
+      }, 10000);
+    }
+
+    // Send shame to victim
+    io.to(victimId).emit("receive_shame", {
+      name: name || "Anonymous Slacker",
+      url: url || "Unknown",
+      photo: photo || null,
+    });
+    console.log(`[shame_sent] victim=${victimId}`);
   });
 
   socket.on("disconnect", (reason) => {
@@ -130,7 +178,7 @@ setInterval(() => {
 }, SWAP_INTERVAL_MS);
 
 server.listen(PORT, () => {
-  console.log(`uofthacks13-server listening on http://localhost:${PORT}`);
+  console.log(`caught-4k-server listening on http://localhost:${PORT}`);
   console.log(`swap interval: ${SWAP_INTERVAL_MS}ms`);
 });
 
