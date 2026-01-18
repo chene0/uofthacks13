@@ -54,6 +54,7 @@ let currentUserIdentity = { email: "Anonymous Slacker" };
 let chargeLevel = 0;
 let lastWarningLevel = 0; // Track which warning we last sent (50, 75, 90)
 let currentSlackingUrl = null; // The URL user was on when caught
+let punishmentTabId = null; // Tab to close after punishment
 
 // Warning thresholds
 const WARNING_THRESHOLDS = [50, 75, 90];
@@ -154,26 +155,108 @@ function ensureSocket() {
     console.log("[receive_shame] Got shamed!", payload);
 
     const { name, url, photo } = payload;
+    const shameName = name || "Unknown Slacker";
+    const shameUrl = url || "Unknown Site";
 
-    // Open a new tab with the perpetrator's slacking URL
-    if (url && isHttpUrl(url)) {
-      chrome.tabs.create({ url, active: false });
+    // ALWAYS open a new tab with the perpetrator's slacking URL and show shame card there
+    if (!url || !isHttpUrl(url)) {
+      console.log("[receive_shame] Invalid URL, cannot open tab");
+      return;
     }
 
-    // Forward to content script to display mugshot card
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: "display_shame",
-        name: name || "Unknown Slacker",
-        url: url || "Unknown Site",
-        photo: photo || null,
-      }).catch(() => {
-        // Content script might not be loaded yet
-        console.log("[receive_shame] Could not send to content script");
-      });
-    }
+    const newTab = await chrome.tabs.create({ url, active: true });
+    console.log("[receive_shame] Opened new tab:", newTab.id);
+
+    // Wait for new tab to finish loading, then inject shame card
+    chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+      if (tabId === newTab.id && changeInfo.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(listener);
+
+        // Try content script first (if available)
+        setTimeout(async () => {
+          try {
+            await chrome.tabs.sendMessage(newTab.id, {
+              type: "display_shame",
+              name: shameName,
+              url: shameUrl,
+              photo: photo || null,
+            });
+            console.log("[receive_shame] Sent shame to content script on new tab");
+          } catch (err) {
+            // Content script not available, inject directly
+            console.log("[receive_shame] Content script not available, injecting directly");
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: newTab.id },
+                func: showShameCardInjected,
+                args: [shameName, shameUrl, photo || null],
+              });
+              console.log("[receive_shame] Injected shame card on new tab");
+            } catch (injectErr) {
+              console.log("[receive_shame] Failed to inject:", injectErr.message);
+            }
+          }
+        }, 1000); // Longer delay to ensure page is fully ready
+      }
+    });
   });
+
+  // Injected function for fallback shame display
+  function showShameCardInjected(name, url, photo) {
+    // Remove any existing shame card
+    const existing = document.getElementById("caught4k-shame");
+    if (existing) existing.remove();
+
+    let domain = url;
+    try { domain = new URL(url).hostname; } catch { }
+
+    const card = document.createElement("div");
+    card.id = "caught4k-shame";
+    card.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 999999;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border: 4px solid #e94560;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 0 60px rgba(233, 69, 96, 0.5);
+      text-align: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 400px;
+    `;
+
+    card.innerHTML = `
+      <div style="color: #e94560; font-size: 28px; font-weight: bold; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 2px;">
+        CAUGHT 4K
+      </div>
+      <div style="margin-bottom: 16px;">
+        ${photo ? `<img src="${photo}" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #e94560;">` : ''}
+      </div>
+      <div style="color: #fff; font-size: 18px; margin-bottom: 8px;">
+        <strong style="color: #e94560;">${name}</strong>
+      </div>
+      <div style="color: #aaa; font-size: 14px; margin-bottom: 16px;">
+        was slacking on <strong style="color: #0f4c75;">${domain}</strong>
+      </div>
+      <button id="caught4k-close" style="
+        background: #e94560;
+        color: white;
+        border: none;
+        padding: 12px 32px;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+      ">DISMISS</button>
+    `;
+
+    document.body.appendChild(card);
+    document.getElementById("caught4k-close").addEventListener("click", () => card.remove());
+    setTimeout(() => { if (document.getElementById("caught4k-shame")) card.remove(); }, 10000);
+  }
 
   return socket;
 }
@@ -200,6 +283,10 @@ async function disconnectIfAny() {
 async function checkAndChargeSlacker() {
   const enabled = await getEnabled();
   if (!enabled) return;
+
+  // Don't charge if camera permission not granted
+  const hasPermission = await hasCameraPermission();
+  if (!hasPermission) return;
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -270,6 +357,9 @@ async function sendWarningToTab(tabId, message) {
 }
 
 async function triggerPunishment(tabId) {
+  // Save the tab ID so we can close it after punishment
+  punishmentTabId = tabId;
+
   try {
     await chrome.tabs.sendMessage(tabId, {
       type: "trigger_punishment",
@@ -299,6 +389,15 @@ function sendShamePacket(photo) {
   socket.emit("shame_packet", packet);
   console.log("[shame] Sent shame packet:", packet.name, packet.url);
 
+  // Close the slacking tab after punishment
+  if (punishmentTabId) {
+    chrome.tabs.remove(punishmentTabId).catch(() => {
+      console.log("[shame] Could not close tab");
+    });
+    console.log("[shame] Closed slacking tab:", punishmentTabId);
+    punishmentTabId = null;
+  }
+
   // Reset charge after punishment
   chargeLevel = 0;
   lastWarningLevel = 0;
@@ -323,9 +422,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     // Popup enable/disable
     if (msg?.type === "set_enabled") {
-      const enabled = Boolean(msg?.enabled);
-      await setEnabled(enabled);
-      if (enabled) await connectIfEnabled();
+      const wantsEnabled = Boolean(msg?.enabled);
+
+      // If trying to enable, check camera permission first
+      if (wantsEnabled) {
+        const hasPermission = await hasCameraPermission();
+        if (!hasPermission) {
+          // Don't enable, open welcome page instead
+          openWelcomePage();
+          sendResponse({
+            enabled: false,
+            connected,
+            chargeLevel,
+            socketId: socket?.id || null,
+            needsCameraPermission: true,
+          });
+          return;
+        }
+      }
+
+      await setEnabled(wantsEnabled);
+      if (wantsEnabled) await connectIfEnabled();
       else await disconnectIfAny();
 
       sendResponse({
@@ -364,8 +481,40 @@ setInterval(checkAndChargeSlacker, 1000);
 // Connect to server if enabled
 connectIfEnabled();
 
-// Also fetch identity when extension is installed/updated
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("[init] Extension installed/updated");
+// Check camera permission on every startup (not just install)
+(async function checkCameraOnStartup() {
+  const hasPermission = await hasCameraPermission();
+  console.log("[init] Camera permission status:", hasPermission);
+  if (!hasPermission) {
+    console.log("[init] Camera permission not granted, opening welcome page");
+    openWelcomePage();
+  }
+})();
+
+// Check if camera permission has been granted
+async function hasCameraPermission() {
+  const { cameraPermissionGranted } = await chrome.storage.local.get({ cameraPermissionGranted: false });
+  return Boolean(cameraPermissionGranted);
+}
+
+// Open welcome page to request camera permission
+function openWelcomePage() {
+  chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") });
+}
+
+// On install, open the welcome page to request camera permission
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log("[init] Extension installed/updated:", details.reason);
   fetchUserIdentity();
+
+  // Always open welcome page on fresh install
+  if (details.reason === "install") {
+    openWelcomePage();
+  } else {
+    // On update, check if permission already granted
+    const hasPermission = await hasCameraPermission();
+    if (!hasPermission) {
+      openWelcomePage();
+    }
+  }
 });

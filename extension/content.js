@@ -89,9 +89,13 @@ if (window.__caught4kInjected) {
   }
 
   // ============================================================================
-  // CAMERA FLASH EFFECT
+  // WHITE SCREEN EFFECT (stays until photo is captured)
   // ============================================================================
-  function flashScreen() {
+  function showWhiteScreen() {
+    // Remove any existing
+    const existing = document.getElementById("caught4k-flash");
+    if (existing) existing.remove();
+
     const flash = document.createElement("div");
     flash.id = "caught4k-flash";
     flash.style.cssText = `
@@ -103,17 +107,20 @@ if (window.__caught4kInjected) {
       background: white;
       z-index: 999999;
       opacity: 1;
-      transition: opacity 0.5s ease-out;
-      pointer-events: none;
+      pointer-events: all;
     `;
 
     document.body.appendChild(flash);
+    return flash;
+  }
 
-    // Fade out
-    setTimeout(() => {
+  function hideWhiteScreen() {
+    const flash = document.getElementById("caught4k-flash");
+    if (flash) {
+      flash.style.transition = "opacity 0.3s ease-out";
       flash.style.opacity = "0";
-      setTimeout(() => flash.remove(), 500);
-    }, 100);
+      setTimeout(() => flash.remove(), 300);
+    }
   }
 
   // ============================================================================
@@ -121,8 +128,8 @@ if (window.__caught4kInjected) {
   // ============================================================================
   async function captureWebcam() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
       });
 
       // Create video element
@@ -133,8 +140,8 @@ if (window.__caught4kInjected) {
 
       await video.play();
 
-      // Wait a moment for video to stabilize
-      await new Promise(r => setTimeout(r, 300));
+      // Wait longer for video to stabilize (screen stays white during this)
+      await new Promise(r => setTimeout(r, 1500));
 
       // Create canvas and capture frame
       const canvas = document.createElement("canvas");
@@ -163,22 +170,22 @@ if (window.__caught4kInjected) {
     canvas.width = 200;
     canvas.height = 200;
     const ctx = canvas.getContext("2d");
-    
+
     // Dark background
     ctx.fillStyle = "#1a1a1a";
     ctx.fillRect(0, 0, 200, 200);
-    
+
     // Ghost emoji text
     ctx.font = "80px serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("👻", 100, 90);
-    
+
     // "Camera Denied" text
     ctx.font = "14px sans-serif";
     ctx.fillStyle = "#888";
     ctx.fillText("Camera Denied", 100, 160);
-    
+
     return canvas.toDataURL("image/png");
   }
 
@@ -188,11 +195,14 @@ if (window.__caught4kInjected) {
   async function handlePunishment(name, url) {
     console.log("[content] Punishment triggered for:", name);
 
-    // Flash the screen
-    flashScreen();
+    // Show white screen (stays until photo is done)
+    showWhiteScreen();
 
-    // Capture webcam
+    // Capture webcam while screen is white
     const photo = await captureWebcam();
+
+    // Hide the white screen after capture
+    hideWhiteScreen();
 
     // Send back to background
     chrome.runtime.sendMessage({
@@ -234,7 +244,7 @@ if (window.__caught4kInjected) {
     let domain = url;
     try {
       domain = new URL(url).hostname;
-    } catch {}
+    } catch { }
 
     card.innerHTML = `
       <style>
